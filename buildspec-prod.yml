@@ -1,0 +1,37 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Building for PROD environment..."
+      - npm ci || npm install
+  
+  build:
+    commands:
+      - echo "Building React app for PROD..."
+      - export NODE_OPTIONS=--openssl-legacy-provider
+      - npm run build
+      - cd build && zip -r ../deploy.zip . && cd ..
+  
+  post_build:
+    commands:
+      - echo "Deploying to Amplify PROD..."
+      - |
+        DEPLOYMENT=$(aws amplify create-deployment \
+          --app-id $AMPLIFY_APP_ID \
+          --branch-name $AMPLIFY_BRANCH \
+          --region $AMPLIFY_REGION)
+        UPLOAD_URL=$(echo $DEPLOYMENT | jq -r '.zipUploadUrl')
+        JOB_ID=$(echo $DEPLOYMENT | jq -r '.jobId')
+        curl -X PUT "$UPLOAD_URL" -H "Content-Type:application/zip" --upload-file deploy.zip
+        aws amplify start-deployment \
+          --app-id $AMPLIFY_APP_ID \
+          --branch-name $AMPLIFY_BRANCH \
+          --job-id $JOB_ID \
+          --region $AMPLIFY_REGION
+      - echo "✅ PROD deployment complete!"
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: build
